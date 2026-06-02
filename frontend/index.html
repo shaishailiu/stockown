@@ -631,6 +631,15 @@
             return qty.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 6 });
         }
 
+        function formatPriceTime(isoStr) {
+            const d = new Date(isoStr);
+            const month = (d.getMonth() + 1).toString().padStart(2, '0');
+            const day = d.getDate().toString().padStart(2, '0');
+            const hour = d.getHours().toString().padStart(2, '0');
+            const min = d.getMinutes().toString().padStart(2, '0');
+            return `${month}-${day} ${hour}:${min}`;
+        }
+
         async function loadStocks() {
             try {
                 const res = await fetch(`${API_BASE}/api/stocks`);
@@ -731,6 +740,7 @@
                         <td class="price">
                             HK$${formatMoney(stock.current_price_hkd)}
                             <span class="price-original">${currSym}${formatMoney(stock.current_price)}</span>
+                            ${stock.price_update_time ? `<span class="price-original">${formatPriceTime(stock.price_update_time)}</span>` : ''}
                         </td>
                         <td class="${profitClass}">${profitSign}HK$${formatMoney(stock.profit)}</td>
                         <td class="${profitClass}">${profitSign}${stock.profit_percent}%</td>
@@ -777,6 +787,7 @@
                             <div class="stock-card-item">
                                 <span class="label">当前价 (HKD)</span>
                                 <span class="val">HK$${formatMoney(stock.current_price_hkd)}</span>
+                                ${stock.price_update_time ? `<span style="font-size:11px;color:#999;margin-top:2px;">${formatPriceTime(stock.price_update_time)}</span>` : ''}
                             </div>
                             <div class="stock-card-item">
                                 <span class="label">数量</span>

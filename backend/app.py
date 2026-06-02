@@ -93,8 +93,28 @@ def get_yfinance_symbol(code, market):
     return code
 
 
+def get_exchange_rate_from_tencent():
+    """通过腾讯 API 获取 USD/HKD 汇率（备用数据源）"""
+    try:
+        # 腾讯外汇接口：fx_susdchkd = 美元兑港币
+        url = "https://qt.gtimg.cn/q=fx_susdchkd"
+        r = requests.get(url, timeout=5)
+        content = r.content.decode('gbk', errors='ignore')
+        fields = content.split('~')
+        if len(fields) > 7:
+            # fields[7] 是当前价格
+            rate_str = fields[7].strip()
+            if rate_str and float(rate_str) > 0:
+                rate = float(rate_str)
+                print(f"[腾讯API] USD/HKD 汇率获取成功: {rate}")
+                return round(rate, 4)
+    except Exception as e:
+        print(f"[腾讯API汇率获取失败] {e}")
+    return None
+
+
 def get_exchange_rate():
-    """获取 USD/HKD 汇率"""
+    """获取 USD/HKD 汇率，yfinance 优先，腾讯 API 备用"""
     global exchange_rates
     try:
         # 使用 yfinance 获取汇率
@@ -104,12 +124,23 @@ def get_exchange_rate():
             exchange_rates['USD_HKD'] = round(float(hist['Close'].iloc[-1]), 4)
             exchange_rates['last_update'] = datetime.now().isoformat()
             print(f"[汇率更新] USD/HKD = {exchange_rates['USD_HKD']}")
+            return
     except Exception as e:
-        print(f"[汇率获取失败] {e}, 使用默认汇率 {exchange_rates['USD_HKD']}")
+        print(f"[yfinance汇率获取失败] {e}")
+
+    # yfinance 失败，尝试腾讯 API
+    print("[备用数据源] yfinance 汇率获取失败，尝试腾讯 API...")
+    rate = get_exchange_rate_from_tencent()
+    if rate:
+        exchange_rates['USD_HKD'] = rate
+        exchange_rates['last_update'] = datetime.now().isoformat()
+        print(f"[汇率更新] USD/HKD = {exchange_rates['USD_HKD']}（来源：腾讯API）")
+    else:
+        print(f"[汇率获取失败] 所有数据源均失败，使用默认汇率 {exchange_rates['USD_HKD']}")
 
 
 def get_stock_price(code, market):
-    """获取单只股票的实时价格（原始货币）"""
+    """获取单只股票的实时价格（原始货币），yfinance 优先，失败回退腾讯 API"""
     symbol = get_yfinance_symbol(code, market)
     try:
         ticker = yf.Ticker(symbol)
@@ -123,7 +154,14 @@ def get_stock_price(code, market):
         if not hist.empty:
             return round(float(hist['Close'].iloc[-1]), 4)
     except Exception as e:
-        print(f"[价格获取失败] {symbol}: {e}")
+        print(f"[yfinance价格获取失败] {symbol}: {e}")
+
+    # yfinance 失败，尝试腾讯 API
+    print(f"[备用数据源] {symbol} yfinance 失败，尝试腾讯 API...")
+    tencent_price = get_stock_price_from_tencent(code, market)
+    if tencent_price:
+        return tencent_price
+
     return None
 
 
@@ -149,6 +187,33 @@ def get_stock_name_from_tencent(code, market):
     except Exception as e:
         print(f"[腾讯API获取名称失败] {code}: {e}")
     return ''
+
+
+def get_stock_price_from_tencent(code, market):
+    """通过腾讯股票 API 获取实时价格（备用数据源）"""
+    try:
+        if market == 'HK':
+            padded = code.zfill(5)
+            symbol = f"hk{padded}"
+        elif market == 'US':
+            symbol = f"us{code}"
+        else:
+            return None
+
+        url = f"https://qt.gtimg.cn/q={symbol}"
+        r = requests.get(url, timeout=5)
+        content = r.content.decode('gbk', errors='ignore')
+        fields = content.split('~')
+        if len(fields) > 3:
+            # 腾讯 API 字段：fields[3] 是当前价格
+            price_str = fields[3].strip()
+            if price_str and float(price_str) > 0:
+                price = float(price_str)
+                print(f"[腾讯API] {code} 获取价格成功: {price}")
+                return round(price, 4)
+    except Exception as e:
+        print(f"[腾讯API获取价格失败] {code}: {e}")
+    return None
 
 
 def get_stock_info(code, market):
@@ -207,6 +272,9 @@ def fetch_all_prices(stocks):
     if not symbols:
         return cache
 
+    # 记录 yfinance 获取失败的股票
+    failed_symbols = list(symbols)
+
     try:
         # 批量下载
         tickers = yf.Tickers(' '.join(symbols))
@@ -222,19 +290,25 @@ def fetch_all_prices(stocks):
                             'time': datetime.now().isoformat()
                         }
                         updated = True
+                        failed_symbols.remove(symbol)
             except Exception as e:
                 print(f"[批量获取] {symbol} 失败: {e}")
     except Exception as e:
         print(f"[批量下载失败] {e}")
-        # 回退到逐个获取
-        for symbol, stock in symbol_map.items():
-            price = get_stock_price(stock['code'], stock['market'])
-            if price:
-                cache[symbol] = {
-                    'price': price,
-                    'time': datetime.now().isoformat()
-                }
-                updated = True
+
+    # 对 yfinance 获取失败的股票，使用腾讯 API 作为备用数据源
+    if failed_symbols:
+        print(f"[备用数据源] 以下股票 yfinance 获取失败，尝试腾讯 API: {failed_symbols}")
+        for symbol in failed_symbols:
+            stock = symbol_map.get(symbol)
+            if stock:
+                price = get_stock_price_from_tencent(stock['code'], stock['market'])
+                if price:
+                    cache[symbol] = {
+                        'price': price,
+                        'time': datetime.now().isoformat()
+                    }
+                    updated = True
 
     if updated:
         save_price_cache(cache)
@@ -258,6 +332,7 @@ def admin():
 def get_stocks():
     """获取所有股票持仓"""
     stocks = load_stocks()
+    price_cache = load_price_cache()
 
     # 计算盈利和持仓占比（全部基于港币）
     total_value = 0
@@ -277,6 +352,13 @@ def get_stocks():
         stock['profit_percent'] = round((market_value - cost_value) / cost_value * 100, 2) if cost_value > 0 else 0
         stock['position_ratio'] = round(market_value / total_value * 100, 2) if total_value > 0 else 0
         stock['market_value_hkd'] = round(market_value, 2)
+
+        # 附带每只股票的价格更新时间
+        symbol = get_yfinance_symbol(stock['code'], stock.get('market', 'HK'))
+        if symbol in price_cache:
+            stock['price_update_time'] = price_cache[symbol].get('time')
+        else:
+            stock['price_update_time'] = None
 
     return jsonify({
         'stocks': stocks,
