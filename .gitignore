@@ -1,0 +1,20 @@
+# 日志文件
+server.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.env
+
+# 数据文件（持仓数据和更新时间是个人数据）
+backend/data/stocks.json
+backend/data/last_update.json
+
+# IDE
+.vscode/
+.idea/
+
+# CodeBuddy
+.codebuddy/

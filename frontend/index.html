@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>我的股票持仓</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #1a73e8;
+            --success: #34a853;
+            --danger: #ea4335;
+            --bg: #f8f9fa;
+            --card-bg: #ffffff;
+            --text: #202124;
+            --text-secondary: #5f6368;
+            --border: #e8eaed;
+            --shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a73e8 0%, #1557b0 100%);
+            color: white;
+            padding: 24px 32px;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .header-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 8px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .header-info .meta {
+            font-size: 14px;
+            opacity: 0.95;
+            font-weight: 500;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .admin-link {
+            color: rgba(255,255,255,0.8);
+            text-decoration: none;
+            font-size: 13px;
+            transition: color 0.2s;
+        }
+
+        .admin-link:hover {
+            color: white;
+        }
+
+        .container {
+            max-width: 1300px;
+            margin: 0 auto;
+            padding: 24px 16px;
+        }
+
+        /* 汇率信息条 */
+        .rate-bar {
+            background: var(--card-bg);
+            border-radius: 10px;
+            padding: 12px 20px;
+            margin-bottom: 16px;
+            box-shadow: var(--shadow);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .rate-bar .rate-info {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .rate-bar .rate-info strong {
+            color: var(--text);
+        }
+
+        .rate-bar .currency-note {
+            font-size: 12px;
+            color: var(--text-secondary);
+            background: #f1f3f4;
+            padding: 4px 10px;
+            border-radius: 12px;
+        }
+
+        /* 汇总卡片 */
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .summary-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: var(--shadow);
+            transition: transform 0.2s;
+        }
+
+        .summary-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .summary-card .label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .summary-card .value {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .summary-card .value.profit {
+            color: var(--danger);
+        }
+
+        .summary-card .value.loss {
+            color: var(--success);
+        }
+
+        /* 表格区域 */
+        .table-container {
+            background: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .table-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .table-header h2 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .btn-group-header {
+            display: flex;
+            gap: 8px;
+        }
+
+        .refresh-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .refresh-btn:hover {
+            background: #1557b0;
+        }
+
+        .refresh-btn:disabled {
+            background: #9aa0a6;
+            cursor: not-allowed;
+        }
+
+        .refresh-btn.price-btn {
+            background: var(--success);
+        }
+
+        .refresh-btn.price-btn:hover {
+            background: #2d8f47;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: #f1f3f4;
+            padding: 12px 14px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            text-transform: uppercase;
+        }
+
+        td {
+            padding: 14px;
+            border-bottom: 1px solid var(--border);
+            font-size: 14px;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .stock-code {
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        .stock-name {
+            font-weight: 500;
+        }
+
+        .market-tag {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+
+        .market-tag.us {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+
+        .market-tag.hk {
+            background: #fce4ec;
+            color: #c62828;
+        }
+
+        .price {
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-weight: 500;
+        }
+
+        .price-original {
+            font-size: 11px;
+            color: var(--text-secondary);
+            display: block;
+            margin-top: 2px;
+        }
+
+        .profit-positive {
+            color: var(--danger);
+            font-weight: 600;
+        }
+
+        .profit-negative {
+            color: var(--success);
+            font-weight: 600;
+        }
+
+        .position-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .position-bar .bar {
+            flex: 1;
+            height: 6px;
+            background: #e8eaed;
+            border-radius: 3px;
+            overflow: hidden;
+            min-width: 60px;
+        }
+
+        .position-bar .bar-fill {
+            height: 100%;
+            background: var(--primary);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
+        .position-bar .percent {
+            font-size: 13px;
+            font-weight: 500;
+            min-width: 48px;
+            text-align: right;
+        }
+
+        /* 空状态 */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+
+        .empty-state p {
+            font-size: 16px;
+        }
+
+        /* 加载状态 */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid #e8eaed;
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 12px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 移动端卡片视图 */
+        .mobile-cards {
+            display: none;
+        }
+
+        .stock-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: var(--shadow);
+        }
+
+        .stock-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .stock-card-header .left {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .stock-card-header .code {
+            font-weight: 600;
+            color: var(--primary);
+            font-size: 15px;
+        }
+
+        .stock-card-header .name {
+            font-weight: 500;
+            color: var(--text);
+            font-size: 15px;
+        }
+
+        .stock-card-body {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .stock-card-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stock-card-item .label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 2px;
+        }
+
+        .stock-card-item .val {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .stock-card-position {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border);
+        }
+
+        .stock-card-position .label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+            display: block;
+        }
+
+        .stock-card-position .position-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .stock-card-position .bar {
+            flex: 1;
+            height: 8px;
+            background: #e8eaed;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .stock-card-position .bar-fill {
+            height: 100%;
+            background: var(--primary);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+
+        .stock-card-position .percent {
+            font-size: 14px;
+            font-weight: 700;
+            min-width: 50px;
+            text-align: right;
+            color: var(--primary);
+        }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .header {
+                padding: 16px 20px;
+            }
+
+            .header h1 {
+                font-size: 20px;
+            }
+
+            .container {
+                padding: 16px 12px;
+            }
+
+            .summary-cards {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 10px;
+            }
+
+            .summary-card {
+                padding: 14px;
+            }
+
+            .summary-card .value {
+                font-size: 18px;
+            }
+
+            .table-container .table-wrapper {
+                display: none;
+            }
+
+            .mobile-cards {
+                display: block;
+                padding: 12px;
+            }
+
+            .table-header {
+                padding: 12px 16px;
+            }
+
+            .rate-bar {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-top">
+            <h1>📈 我的股票持仓</h1>
+            <a href="/admin" class="admin-link">⚙️ 后台管理</a>
+        </div>
+        <div class="header-info">
+            <span class="meta" id="update-time">加载中...</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- 汇总卡片 -->
+        <div class="summary-cards" id="summary-cards">
+            <div class="summary-card">
+                <div class="label">总市值 (HKD)</div>
+                <div class="value" id="total-value">--</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">总成本 (HKD)</div>
+                <div class="value" id="total-cost">--</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">总盈亏 (HKD)</div>
+                <div class="value" id="total-profit">--</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">总盈亏比例</div>
+                <div class="value" id="total-profit-percent">--</div>
+            </div>
+            <div class="summary-card">
+                <div class="label">持仓数量</div>
+                <div class="value" id="stock-count">--</div>
+            </div>
+        </div>
+
+        <!-- 表格 -->
+        <div class="table-container">
+            <div class="table-header">
+                <h2>持仓明细</h2>
+                <div class="btn-group-header">
+                    <button class="refresh-btn price-btn" id="price-refresh-btn" onclick="refreshPrices()" title="后台每天自动更新一次，点击可立即刷新">
+                        📡 立即刷新价格
+                    </button>
+                    <button class="refresh-btn" onclick="loadStocks()">
+                        🔄 刷新
+                    </button>
+                </div>
+            </div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>股票代码</th>
+                            <th>名称</th>
+                            <th>市场</th>
+                            <th>买入价 (HKD)</th>
+                            <th>数量</th>
+                            <th>当前价 (HKD)</th>
+                            <th>盈亏金额</th>
+                            <th>盈亏比例</th>
+                            <th>持仓成本</th>
+                            <th>持仓占比</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stock-table-body">
+                        <tr>
+                            <td colspan="10">
+                                <div class="loading">
+                                    <div class="spinner"></div>
+                                    <p>加载中...</p>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <!-- 移动端卡片视图 -->
+            <div class="mobile-cards" id="mobile-cards"></div>
+        </div>
+
+        <!-- 汇率信息 -->
+        <div class="rate-bar" style="margin-top: 16px; margin-bottom: 0;">
+            <div class="rate-info">
+                💱 汇率: <strong>1 USD = <span id="rate-usd-hkd">--</span> HKD</strong>
+                <span style="margin-left:12px;font-size:12px;color:#999;" id="rate-update-time"></span>
+            </div>
+            <div class="currency-note">💰 所有金额均以港币 (HKD) 显示</div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        function formatMoney(num) {
+            return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function getMarketTag(market) {
+            if (market === 'US') return '<span class="market-tag us">美股</span>';
+            if (market === 'HK') return '<span class="market-tag hk">港股</span>';
+            return `<span class="market-tag">${market}</span>`;
+        }
+
+        function getCurrencySymbol(market) {
+            if (market === 'US') return '$';
+            if (market === 'HK') return 'HK$';
+            return '';
+        }
+
+        function formatQuantity(qty) {
+            if (Number.isInteger(qty)) return qty.toLocaleString();
+            return qty.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+        }
+
+        async function loadStocks() {
+            try {
+                const res = await fetch(`${API_BASE}/api/stocks`);
+                const data = await res.json();
+                const stocks = data.stocks;
+                const rates = data.exchange_rates;
+
+                // 更新汇率显示
+                document.getElementById('rate-usd-hkd').textContent = rates.USD_HKD;
+                if (rates.last_update) {
+                    const time = new Date(rates.last_update).toLocaleString('zh-CN');
+                    document.getElementById('rate-update-time').textContent = `(更新于 ${time})`;
+                }
+
+                renderSummary(stocks);
+                renderTable(stocks);
+                renderMobileCards(stocks);
+
+                // 显示价格数据更新时间
+                if (data.last_price_update) {
+                    const updateTime = new Date(data.last_price_update).toLocaleString('zh-CN');
+                    document.getElementById('update-time').textContent = `价格数据更新时间: ${updateTime}（每天自动更新一次）`;
+                } else {
+                    document.getElementById('update-time').textContent = `价格数据尚未刷新，请等待自动更新或手动刷新`;
+                }
+            } catch (err) {
+                console.error('加载失败:', err);
+                document.getElementById('stock-table-body').innerHTML = `
+                    <tr><td colspan="9">
+                        <div class="empty-state"><p>⚠️ 加载失败，请检查后端服务是否启动</p></div>
+                    </td></tr>
+                `;
+            }
+        }
+
+        async function refreshPrices() {
+            const btn = document.getElementById('price-refresh-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ 正在获取...';
+
+            try {
+                const res = await fetch(`${API_BASE}/api/refresh-prices`, { method: 'POST' });
+                const data = await res.json();
+                alert(data.message);
+                await loadStocks();
+            } catch (err) {
+                alert('刷新失败: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '📡 刷新实时价格';
+            }
+        }
+
+        function renderSummary(stocks) {
+            const totalValue = stocks.reduce((sum, s) => sum + s.market_value_hkd, 0);
+            const totalCost = stocks.reduce((sum, s) => sum + s.buy_price_hkd * s.quantity, 0);
+            const totalProfit = totalValue - totalCost;
+
+            document.getElementById('total-value').textContent = `HK$${formatMoney(totalValue)}`;
+            document.getElementById('total-cost').textContent = `HK$${formatMoney(totalCost)}`;
+
+            const profitEl = document.getElementById('total-profit');
+            profitEl.textContent = `${totalProfit >= 0 ? '+' : ''}HK$${formatMoney(totalProfit)}`;
+            profitEl.className = `value ${totalProfit >= 0 ? 'profit' : 'loss'}`;
+
+            const profitPercent = totalCost > 0 ? ((totalProfit / totalCost) * 100).toFixed(2) : 0;
+            const profitPercentEl = document.getElementById('total-profit-percent');
+            profitPercentEl.textContent = `${totalProfit >= 0 ? '+' : ''}${profitPercent}%`;
+            profitPercentEl.className = `value ${totalProfit >= 0 ? 'profit' : 'loss'}`;
+
+            document.getElementById('stock-count').textContent = `${stocks.length} 只`;
+        }
+
+        function renderTable(stocks) {
+            if (stocks.length === 0) {
+                document.getElementById('stock-table-body').innerHTML = `
+                    <tr><td colspan="10">
+                        <div class="empty-state"><p>暂无持仓数据，请在后台添加</p></div>
+                    </td></tr>
+                `;
+                return;
+            }
+
+            const html = stocks.map(stock => {
+                const profitClass = stock.profit >= 0 ? 'profit-positive' : 'profit-negative';
+                const profitSign = stock.profit >= 0 ? '+' : '';
+                const currSym = getCurrencySymbol(stock.market);
+                return `
+                    <tr>
+                        <td><span class="stock-code">${stock.code}</span></td>
+                        <td><span class="stock-name">${stock.name}</span></td>
+                        <td>${getMarketTag(stock.market)}</td>
+                        <td class="price">
+                            HK$${formatMoney(stock.buy_price_hkd)}
+                            <span class="price-original">${currSym}${formatMoney(stock.buy_price)}</span>
+                        </td>
+                        <td>${formatQuantity(stock.quantity)}</td>
+                        <td class="price">
+                            HK$${formatMoney(stock.current_price_hkd)}
+                            <span class="price-original">${currSym}${formatMoney(stock.current_price)}</span>
+                        </td>
+                        <td class="${profitClass}">${profitSign}HK$${formatMoney(stock.profit)}</td>
+                        <td class="${profitClass}">${profitSign}${stock.profit_percent}%</td>
+                        <td class="price">HK$${formatMoney(stock.cost_value_hkd)}</td>
+                        <td>
+                            <div class="position-bar">
+                                <div class="bar"><div class="bar-fill" style="width: ${stock.position_ratio}%"></div></div>
+                                <span class="percent">${stock.position_ratio}%</span>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            document.getElementById('stock-table-body').innerHTML = html;
+        }
+
+        function renderMobileCards(stocks) {
+            if (stocks.length === 0) {
+                document.getElementById('mobile-cards').innerHTML = `
+                    <div class="empty-state"><p>暂无持仓数据</p></div>
+                `;
+                return;
+            }
+
+            const html = stocks.map(stock => {
+                const profitClass = stock.profit >= 0 ? 'profit-positive' : 'profit-negative';
+                const profitSign = stock.profit >= 0 ? '+' : '';
+                return `
+                    <div class="stock-card">
+                        <div class="stock-card-header">
+                            <div class="left">
+                                <span class="code">${stock.code}</span>
+                                <span class="name">${stock.name}</span>
+                                ${getMarketTag(stock.market)}
+                            </div>
+                            <span class="${profitClass}">${profitSign}${stock.profit_percent}%</span>
+                        </div>
+                        <div class="stock-card-body">
+                            <div class="stock-card-item">
+                                <span class="label">买入价 (HKD)</span>
+                                <span class="val">HK$${formatMoney(stock.buy_price_hkd)}</span>
+                            </div>
+                            <div class="stock-card-item">
+                                <span class="label">当前价 (HKD)</span>
+                                <span class="val">HK$${formatMoney(stock.current_price_hkd)}</span>
+                            </div>
+                            <div class="stock-card-item">
+                                <span class="label">数量</span>
+                                <span class="val">${formatQuantity(stock.quantity)}</span>
+                            </div>
+                            <div class="stock-card-item">
+                                <span class="label">持仓成本</span>
+                                <span class="val">HK$${formatMoney(stock.cost_value_hkd)}</span>
+                            </div>
+                            <div class="stock-card-item">
+                                <span class="label">盈亏 (HKD)</span>
+                                <span class="val ${profitClass}">${profitSign}HK$${formatMoney(stock.profit)}</span>
+                            </div>
+                            <div class="stock-card-item">
+                                <span class="label">市值 (HKD)</span>
+                                <span class="val">HK$${formatMoney(stock.market_value_hkd)}</span>
+                            </div>
+                        </div>
+                        <div class="stock-card-position">
+                            <span class="label">持仓占比</span>
+                            <div class="position-bar">
+                                <div class="bar"><div class="bar-fill" style="width: ${stock.position_ratio}%"></div></div>
+                                <span class="percent">${stock.position_ratio}%</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('mobile-cards').innerHTML = html;
+        }
+
+        // 初始加载
+        loadStocks();
+    </script>
+</body>
+</html>
