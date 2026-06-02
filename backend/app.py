@@ -454,12 +454,22 @@ def auto_refresh_daily():
 
 
 if __name__ == '__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser(description='股票持仓管理系统')
+    parser.add_argument('-p', '--port', type=int, default=5000, help='服务端口号 (默认: 5000)')
+    parser.add_argument('--host', type=str, default='0.0.0.0', help='监听地址 (默认: 0.0.0.0)')
+    parser.add_argument('--no-debug', action='store_true', help='关闭调试模式')
+    args = parser.parse_args()
+
     ensure_data_file()
     # 启动时获取汇率
     get_exchange_rate()
 
+    debug_mode = not args.no_debug
+
     # 仅在主进程中启动每日自动刷新线程（避免 debug reloader 重复启动）
-    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or not app.debug:
+    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or not debug_mode:
         refresh_thread = threading.Thread(target=auto_refresh_daily, daemon=True)
         refresh_thread.start()
 
@@ -467,7 +477,7 @@ if __name__ == '__main__':
     print("  股票持仓管理系统")
     print(f"  当前汇率 USD/HKD = {exchange_rates['USD_HKD']}")
     print("  价格刷新频率: 每天自动更新一次")
-    print("  前台查看: http://localhost:5000")
-    print("  后台管理: http://localhost:5000/admin")
+    print(f"  前台查看: http://localhost:{args.port}")
+    print(f"  后台管理: http://localhost:{args.port}/admin")
     print("=" * 50)
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=debug_mode, host=args.host, port=args.port)
