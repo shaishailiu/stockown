@@ -162,6 +162,96 @@
             color: var(--success);
         }
 
+        /* 板块统计 */
+        .sector-section {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px 24px;
+            box-shadow: var(--shadow);
+            margin-bottom: 24px;
+        }
+
+        .sector-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 14px;
+        }
+
+        .sector-card {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 16px;
+            border-left: 4px solid var(--primary);
+            transition: box-shadow 0.2s;
+        }
+
+        .sector-card:hover {
+            box-shadow: var(--shadow);
+        }
+
+        .sector-card.ai { border-left-color: #34a853; }
+        .sector-card.cn { border-left-color: #e65100; }
+        .sector-card.other { border-left-color: #9e9e9e; }
+
+        .sector-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .sector-card-header .sector-name {
+            font-size: 15px;
+            font-weight: 600;
+        }
+
+        .sector-card-header .sector-count {
+            font-size: 12px;
+            color: var(--text-secondary);
+            background: #e8eaed;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+
+        .sector-card-value {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: var(--text);
+        }
+
+        .sector-card-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .sector-card-bar .bar {
+            flex: 1;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .sector-card-bar .bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            background: var(--primary);
+            transition: width 0.5s ease;
+        }
+
+        .sector-card.ai .bar-fill { background: #34a853; }
+        .sector-card.cn .bar-fill { background: #e65100; }
+        .sector-card.other .bar-fill { background: #9e9e9e; }
+
+        .sector-card-bar .ratio {
+            font-size: 14px;
+            font-weight: 600;
+            min-width: 48px;
+            text-align: right;
+        }
+
         /* 表格区域 */
         .table-container {
             background: var(--card-bg);
@@ -282,6 +372,31 @@
         .market-tag.hk {
             background: #fce4ec;
             color: #c62828;
+        }
+
+        .type-tag {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+
+        .type-tag.type-ai {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .type-tag.type-cn {
+            background: #fff3e0;
+            color: #e65100;
+        }
+
+        .type-tag.type-other {
+            background: #f5f5f5;
+            color: #616161;
         }
 
         .price {
@@ -572,6 +687,7 @@
                             <th>股票代码</th>
                             <th>名称</th>
                             <th>市场</th>
+                            <th>类型</th>
                             <th>买入价 (HKD)</th>
                             <th>数量</th>
                             <th>当前价 (HKD)</th>
@@ -583,7 +699,7 @@
                     </thead>
                     <tbody id="stock-table-body">
                         <tr>
-                            <td colspan="10">
+                            <td colspan="11">
                                 <div class="loading">
                                     <div class="spinner"></div>
                                     <p>加载中...</p>
@@ -595,6 +711,12 @@
             </div>
             <!-- 移动端卡片视图 -->
             <div class="mobile-cards" id="mobile-cards"></div>
+        </div>
+
+        <!-- 板块统计 -->
+        <div class="sector-section" id="sector-section">
+            <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;">📊 板块分布</h3>
+            <div class="sector-cards" id="sector-cards"></div>
         </div>
 
         <!-- 汇率信息 -->
@@ -618,6 +740,27 @@
             if (market === 'US') return '<span class="market-tag us">美股</span>';
             if (market === 'HK') return '<span class="market-tag hk">港股</span>';
             return `<span class="market-tag">${market}</span>`;
+        }
+
+        function getTypeTag(type) {
+            const map = {
+                'AI': '<span class="type-tag type-ai">AI</span>',
+                '中概股': '<span class="type-tag type-cn">中概股</span>',
+                '其他': '<span class="type-tag type-other">其他</span>'
+            };
+            return map[type] || `<span class="type-tag type-other">${type || '其他'}</span>`;
+        }
+
+        function getSectorClass(type) {
+            if (type === 'AI') return 'ai';
+            if (type === '中概股') return 'cn';
+            return 'other';
+        }
+
+        function getSectorIcon(type) {
+            if (type === 'AI') return '🤖';
+            if (type === '中概股') return '🇨🇳';
+            return '📦';
         }
 
         function getCurrencySymbol(market) {
@@ -655,6 +798,7 @@
                 }
 
                 renderSummary(stocks);
+                renderSectors(data.sectors || []);
                 renderTable(stocks);
                 renderMobileCards(stocks);
 
@@ -668,7 +812,7 @@
             } catch (err) {
                 console.error('加载失败:', err);
                 document.getElementById('stock-table-body').innerHTML = `
-                    <tr><td colspan="9">
+                    <tr><td colspan="11">
                         <div class="empty-state"><p>⚠️ 加载失败，请检查后端服务是否启动</p></div>
                     </td></tr>
                 `;
@@ -713,10 +857,35 @@
             document.getElementById('stock-count').textContent = `${stocks.length} 只`;
         }
 
+        function renderSectors(sectors) {
+            if (!sectors || sectors.length === 0) {
+                document.getElementById('sector-cards').innerHTML = `
+                    <div style="color:#999;text-align:center;padding:20px;">暂无板块数据</div>
+                `;
+                return;
+            }
+
+            const html = sectors.map(s => `
+                <div class="sector-card ${getSectorClass(s.type)}">
+                    <div class="sector-card-header">
+                        <span class="sector-name">${getSectorIcon(s.type)} ${s.type}</span>
+                        <span class="sector-count">${s.count} 只</span>
+                    </div>
+                    <div class="sector-card-value">HK$${formatMoney(s.market_value_hkd)}</div>
+                    <div class="sector-card-bar">
+                        <div class="bar"><div class="bar-fill" style="width: ${s.ratio}%"></div></div>
+                        <span class="ratio">${s.ratio}%</span>
+                    </div>
+                </div>
+            `).join('');
+
+            document.getElementById('sector-cards').innerHTML = html;
+        }
+
         function renderTable(stocks) {
             if (stocks.length === 0) {
                 document.getElementById('stock-table-body').innerHTML = `
-                    <tr><td colspan="10">
+                    <tr><td colspan="11">
                         <div class="empty-state"><p>暂无持仓数据，请在后台添加</p></div>
                     </td></tr>
                 `;
@@ -732,6 +901,7 @@
                         <td><span class="stock-code">${stock.code}</span></td>
                         <td><span class="stock-name">${stock.name}</span></td>
                         <td>${getMarketTag(stock.market)}</td>
+                        <td>${getTypeTag(stock.type)}</td>
                         <td class="price">
                             HK$${formatMoney(stock.buy_price_hkd)}
                             <span class="price-original">${currSym}${formatMoney(stock.buy_price)}</span>

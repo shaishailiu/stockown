@@ -360,8 +360,30 @@ def get_stocks():
         else:
             stock['price_update_time'] = None
 
+    # 计算板块统计
+    sectors = {}
+    for stock in stocks:
+        t = stock.get('type', '其他')
+        market_value_hkd = stock['market_value_hkd']
+        if t not in sectors:
+            sectors[t] = {
+                'type': t,
+                'market_value_hkd': 0,
+                'count': 0
+            }
+        sectors[t]['market_value_hkd'] += market_value_hkd
+        sectors[t]['count'] += 1
+
+    sector_list = []
+    for s in sectors.values():
+        s['market_value_hkd'] = round(s['market_value_hkd'], 2)
+        s['ratio'] = round(s['market_value_hkd'] / total_value * 100, 2) if total_value > 0 else 0
+        sector_list.append(s)
+    sector_list.sort(key=lambda x: x['market_value_hkd'], reverse=True)
+
     return jsonify({
         'stocks': stocks,
+        'sectors': sector_list,
         'exchange_rates': {
             'USD_HKD': exchange_rates['USD_HKD'],
             'last_update': exchange_rates['last_update']
@@ -400,6 +422,7 @@ def add_stock():
         'code': data['code'].upper(),
         'name': data['name'],
         'market': market,
+        'type': data.get('type', '其他'),
         'buy_price': float(data['buy_price']),
         'quantity': float(data['quantity']),
         'current_price': float(data.get('current_price', data['buy_price']))
@@ -420,6 +443,7 @@ def update_stock(stock_id):
             stock['code'] = data.get('code', stock['code']).upper()
             stock['name'] = data.get('name', stock['name'])
             stock['market'] = data.get('market', stock.get('market', 'HK')).upper()
+            stock['type'] = data.get('type', stock.get('type', '其他'))
             stock['buy_price'] = float(data.get('buy_price', stock['buy_price']))
             stock['quantity'] = float(data.get('quantity', stock['quantity']))
             stock['current_price'] = float(data.get('current_price', stock['current_price']))

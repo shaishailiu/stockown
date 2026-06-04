@@ -11,7 +11,7 @@ venv/
 # 数据文件（持仓数据和更新时间是个人数据）
 backend/data/stocks.json
 backend/data/last_update.json
-
+backend/data/price_cache.json
 # IDE
 .vscode/
 .idea/
