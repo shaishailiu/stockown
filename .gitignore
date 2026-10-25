@@ -8,8 +8,7 @@ __pycache__/
 venv/
 .env
 
-# 数据文件（持仓数据和更新时间是个人数据）
-backend/data/stocks.json
+# 运行缓存及更新时间（持仓和标签定义纳入版本管理）
 backend/data/last_update.json
 backend/data/price_cache.json
 # IDE
@@ -19,6 +18,5 @@ backend/data/price_cache.json
 # CodeBuddy
 .codebuddy/
 
-backend/data/tags.json
 backend/data/*.tmp
 backend/data/backups/
