@@ -7,12 +7,52 @@ import requests
 from datetime import datetime, timedelta
 import threading
 import time
+from functools import wraps
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
 CORS(app)
 
 DATA_FILE = os.path.join(os.path.dirname(__file__), 'data', 'stocks.json')
 CACHE_FILE = os.path.join(os.path.dirname(__file__), 'data', 'price_cache.json')
+
+TAGS_FILE = os.path.join(os.path.dirname(__file__), 'data', 'tags.json')
+DATA_LOCK = threading.RLock()
+
+
+def synchronized(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        with DATA_LOCK:
+            return fn(*args, **kwargs)
+    return wrapped
+
+
+def write_json(path, value):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    temporary = path + '.tmp'
+    with open(temporary, 'w', encoding='utf-8') as f:
+        json.dump(value, f, ensure_ascii=False, indent=2)
+    os.replace(temporary, path)
+
+
+def load_tags():
+    if os.path.exists(TAGS_FILE):
+        with open(TAGS_FILE, encoding='utf-8') as f:
+            return json.load(f)
+    return []
+
+
+def validate_tag_ids(value):
+    valid = {t['id'] for t in load_tags()}
+    if not isinstance(value, list) or any(type(i) is not int or i not in valid for i in value):
+        raise ValueError('请选择有效的标签')
+    return list(dict.fromkeys(value))
+
+
+@app.errorhandler(ValueError)
+def invalid_value(error):
+    return jsonify({'error': str(error)}), 400
+
 
 # 汇率缓存
 exchange_rates = {
@@ -52,18 +92,79 @@ def ensure_data_file():
             json.dump([], f, ensure_ascii=False)
 
 
+@synchronized
 def load_stocks():
-    """加载股票数据"""
+    """加载持仓，并将旧的单一类型迁移为标签（只迁移一次）。"""
     ensure_data_file()
-    with open(DATA_FILE, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    with open(DATA_FILE, encoding='utf-8') as f:
+        stocks = json.load(f)
+    tags = load_tags()
+    changed = False
+    for stock in stocks:
+        if 'tag_ids' not in stock:
+            name = stock.get('type', '').strip()
+            stock['tag_ids'] = []
+            if name:
+                tag = next((t for t in tags if t['name'] == name), None)
+                if tag is None:
+                    tag = {'id': max((t['id'] for t in tags), default=0) + 1, 'name': name}
+                    tags.append(tag)
+                stock['tag_ids'] = [tag['id']]
+            changed = True
+        if 'type' in stock:
+            del stock['type']
+            changed = True
+    if changed:
+        write_json(TAGS_FILE, tags)
+        save_stocks(stocks)
+    return stocks
 
 
 def save_stocks(stocks):
-    """保存股票数据"""
-    ensure_data_file()
-    with open(DATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(stocks, f, ensure_ascii=False, indent=2)
+    write_json(DATA_FILE, stocks)
+
+
+@app.route('/api/tags', methods=['GET', 'POST'])
+@synchronized
+def tags_collection():
+    stocks = load_stocks()
+    tags = load_tags()
+    if request.method == 'GET':
+        return jsonify({'tags': [dict(t, count=sum(t['id'] in s['tag_ids'] for s in stocks)) for t in tags]})
+    name = tag_name(request.get_json(silent=True), tags)
+    tag = {'id': max((t['id'] for t in tags), default=0) + 1, 'name': name}
+    tags.append(tag)
+    write_json(TAGS_FILE, tags)
+    return jsonify({'tag': tag}), 201
+
+
+def tag_name(data, tags, exclude=None):
+    name = data.get('name') if isinstance(data, dict) else None
+    if not isinstance(name, str) or not name.strip() or len(name.strip()) > 40:
+        raise ValueError('标签名称不能为空，且不能超过 40 个字符')
+    name = name.strip()
+    if any(t['id'] != exclude and t['name'].casefold() == name.casefold() for t in tags):
+        raise ValueError('标签名称已存在')
+    return name
+
+
+@app.route('/api/tags/<int:tag_id>', methods=['PUT', 'DELETE'])
+@synchronized
+def tag_item(tag_id):
+    stocks = load_stocks()
+    tags = load_tags()
+    tag = next((t for t in tags if t['id'] == tag_id), None)
+    if tag is None:
+        return jsonify({'error': '标签不存在'}), 404
+    if request.method == 'PUT':
+        tag['name'] = tag_name(request.get_json(silent=True), tags, tag_id)
+    else:
+        for stock in stocks:
+            stock['tag_ids'] = [i for i in stock['tag_ids'] if i != tag_id]
+        save_stocks(stocks)
+        tags = [t for t in tags if t['id'] != tag_id]
+    write_json(TAGS_FILE, tags)
+    return jsonify({'message': '标签已更新' if request.method == 'PUT' else '标签已删除'})
 
 
 def load_price_cache():
@@ -329,10 +430,15 @@ def admin():
 
 
 @app.route('/api/stocks', methods=['GET'])
+@synchronized
 def get_stocks():
     """获取所有股票持仓"""
     stocks = load_stocks()
     price_cache = load_price_cache()
+    tags = load_tags()
+    tag_map = {t['id']: t for t in tags}
+    for stock in stocks:
+        stock['tags'] = [tag_map[i] for i in stock['tag_ids'] if i in tag_map]
 
     # 计算盈利和持仓占比（全部基于港币）
     total_value = 0
@@ -360,30 +466,20 @@ def get_stocks():
         else:
             stock['price_update_time'] = None
 
-    # 计算板块统计
-    sectors = {}
-    for stock in stocks:
-        t = stock.get('type', '其他')
-        market_value_hkd = stock['market_value_hkd']
-        if t not in sectors:
-            sectors[t] = {
-                'type': t,
-                'market_value_hkd': 0,
-                'count': 0
-            }
-        sectors[t]['market_value_hkd'] += market_value_hkd
-        sectors[t]['count'] += 1
-
+    # 多标签可能重叠，每个标签按其关联持仓汇总。
     sector_list = []
-    for s in sectors.values():
-        s['market_value_hkd'] = round(s['market_value_hkd'], 2)
-        s['ratio'] = round(s['market_value_hkd'] / total_value * 100, 2) if total_value > 0 else 0
-        sector_list.append(s)
-    sector_list.sort(key=lambda x: x['market_value_hkd'], reverse=True)
+    for tag in tags:
+        members = [s for s in stocks if tag['id'] in s['tag_ids']]
+        value = sum(s['market_value_hkd'] for s in members)
+        sector_list.append(dict(tag, type=tag['name'], count=len(members),
+                                market_value_hkd=round(value, 2),
+                                ratio=round(value / total_value * 100, 2) if total_value else 0))
+    sector_list.sort(key=lambda s: s['market_value_hkd'], reverse=True)
 
     return jsonify({
         'stocks': stocks,
         'sectors': sector_list,
+        'tags': tags,
         'exchange_rates': {
             'USD_HKD': exchange_rates['USD_HKD'],
             'last_update': exchange_rates['last_update']
@@ -410,6 +506,7 @@ def query_stock_info():
 
 
 @app.route('/api/stocks', methods=['POST'])
+@synchronized
 def add_stock():
     """添加股票"""
     data = request.json
@@ -422,7 +519,7 @@ def add_stock():
         'code': data['code'].upper(),
         'name': data['name'],
         'market': market,
-        'type': data.get('type', '其他'),
+        'tag_ids': validate_tag_ids(data.get('tag_ids', [])),
         'buy_price': float(data['buy_price']),
         'quantity': float(data['quantity']),
         'current_price': float(data.get('current_price', data['buy_price']))
@@ -433,6 +530,7 @@ def add_stock():
 
 
 @app.route('/api/stocks/<int:stock_id>', methods=['PUT'])
+@synchronized
 def update_stock(stock_id):
     """更新股票信息"""
     data = request.json
@@ -443,7 +541,7 @@ def update_stock(stock_id):
             stock['code'] = data.get('code', stock['code']).upper()
             stock['name'] = data.get('name', stock['name'])
             stock['market'] = data.get('market', stock.get('market', 'HK')).upper()
-            stock['type'] = data.get('type', stock.get('type', '其他'))
+            stock['tag_ids'] = validate_tag_ids(data.get('tag_ids', stock['tag_ids']))
             stock['buy_price'] = float(data.get('buy_price', stock['buy_price']))
             stock['quantity'] = float(data.get('quantity', stock['quantity']))
             stock['current_price'] = float(data.get('current_price', stock['current_price']))
@@ -454,6 +552,7 @@ def update_stock(stock_id):
 
 
 @app.route('/api/stocks/<int:stock_id>', methods=['DELETE'])
+@synchronized
 def delete_stock(stock_id):
     """删除股票"""
     stocks = load_stocks()
@@ -475,17 +574,7 @@ def refresh_prices():
     # 获取所有价格
     cache = fetch_all_prices(stocks)
 
-    # 更新股票的当前价格
-    updated_count = 0
-    for stock in stocks:
-        symbol = get_yfinance_symbol(stock['code'], stock.get('market', 'HK'))
-        if symbol in cache:
-            stock['current_price'] = cache[symbol]['price']
-            updated_count += 1
-
-    save_stocks(stocks)
-    timestamp = datetime.now().isoformat()
-    set_last_price_update(timestamp)
+    updated_count, timestamp = apply_cached_prices(cache)
 
     return jsonify({
         'message': f'价格刷新完成，更新了 {updated_count}/{len(stocks)} 只股票',
@@ -508,6 +597,7 @@ def refresh_exchange_rate():
 
 
 @app.route('/api/stocks/batch-update-price', methods=['POST'])
+@synchronized
 def batch_update_price():
     """批量手动更新当前价格"""
     data = request.json  # [{'id': 1, 'current_price': 10.5}, ...]
@@ -523,6 +613,22 @@ def batch_update_price():
     return jsonify({'message': '批量更新成功'})
 
 
+@synchronized
+def apply_cached_prices(cache):
+    # 行情请求期间可能发生标签或持仓编辑，写入前重新加载最新数据。
+    stocks = load_stocks()
+    updated_count = 0
+    for stock in stocks:
+        symbol = get_yfinance_symbol(stock['code'], stock.get('market', 'HK'))
+        if symbol in cache:
+            stock['current_price'] = cache[symbol]['price']
+            updated_count += 1
+    save_stocks(stocks)
+    timestamp = datetime.now().isoformat()
+    set_last_price_update(timestamp)
+    return updated_count, timestamp
+
+
 def do_daily_refresh():
     """执行每日价格刷新"""
     stocks = load_stocks()
@@ -534,16 +640,7 @@ def do_daily_refresh():
     get_exchange_rate()
     cache = fetch_all_prices(stocks)
 
-    updated_count = 0
-    for stock in stocks:
-        symbol = get_yfinance_symbol(stock['code'], stock.get('market', 'HK'))
-        if symbol in cache:
-            stock['current_price'] = cache[symbol]['price']
-            updated_count += 1
-
-    save_stocks(stocks)
-    timestamp = datetime.now().isoformat()
-    set_last_price_update(timestamp)
+    updated_count, timestamp = apply_cached_prices(cache)
     print(f"[每日刷新] 完成，更新了 {updated_count}/{len(stocks)} 只股票，时间: {timestamp}")
 
 

@@ -455,6 +455,17 @@
                 text-align: center;
             }
         }
+        .tag-filter { display: flex; flex-wrap: wrap; gap: 8px; }
+        .tag-filter-chip { padding: 8px 16px; border: 1px solid #dce3ed; border-radius: 999px; background: white; color: #536176; font: inherit; font-size: 13px; cursor: pointer; transition: background .15s, border-color .15s; }
+        .tag-filter-chip:hover { border-color: #1a73e8; background: #f3f7ff; }
+        .tag-filter-chip[aria-pressed="true"] { background: #1a73e8; border-color: #1a73e8; color: white; font-weight: 600; }
+        .tag-filter-chip:focus-visible { outline: 3px solid #a9ccff; outline-offset: 2px; }
+        .tag-options { display: flex; flex-wrap: wrap; gap: 8px; max-height: 150px; overflow-y: auto; }
+        .tag-options label { display: inline-flex; align-items: center; gap: 5px; padding: 7px 10px; background: #f1f5ff; border-radius: 8px; cursor: pointer; }
+        .tag-options input { width: auto; }
+        .tag-manager-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+        .tag-manager-row input { flex: 1; min-width: 100px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; }
+        .modal { max-height: 90vh; overflow-y: auto; }
     </style>
 </head>
 <body>
@@ -478,6 +489,15 @@
             <button class="btn btn-sm btn-warning" onclick="refreshRate()">🔄 刷新汇率</button>
         </div>
 
+        <div class="form-section">
+            <h2>🏷️ 标签管理</h2>
+            <p style="color:#666;margin:8px 0 12px">新建标签后，可在添加或编辑股票时多选。删除标签仅移除关联，保留股票。</p>
+            <form onsubmit="event.preventDefault(); createTag()" style="display:flex;gap:8px;margin-bottom:12px">
+                <input id="new-tag-name" aria-label="新标签名称" placeholder="如：半导体、红利、长期持有" maxlength="40" style="flex:1;min-width:0;padding:10px;border:1px solid #ddd;border-radius:8px">
+                <button class="btn btn-primary" type="submit">新增标签</button>
+            </form>
+            <div id="tag-manager"></div>
+        </div>
         <!-- 添加股票表单 -->
         <div class="form-section">
             <h2>➕ 添加股票</h2>
@@ -494,12 +514,8 @@
                     <input type="text" id="add-code" placeholder="如: 0700 / AAPL">
                 </div>
                 <div class="form-group">
-                    <label>股票类型</label>
-                    <select id="add-type">
-                        <option value="AI">🤖 AI</option>
-                        <option value="中概股">🇨🇳 中概股</option>
-                        <option value="其他">📦 其他</option>
-                    </select>
+                    <label>标签（可多选）</label>
+                    <div class="tag-options" id="add-tags"></div>
                 </div>
                 <div class="form-group">
                     <label>股票名称</label>
@@ -527,17 +543,22 @@
         <div class="table-section">
             <div class="table-section-header">
                 <h2>📋 当前持仓</h2>
+
                 <div class="header-actions">
                     <button class="btn btn-success btn-sm" id="refresh-price-btn" onclick="refreshAllPrices()">📡 刷新实时价格</button>
                     <button class="btn btn-primary btn-sm" onclick="batchUpdatePrice()">💾 保存手动修改</button>
                 </div>
+            </div>
+            <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
+                <p style="font-size:12px;color:#777;margin:0 0 10px">按标签筛选 · 点击标签切换筛选；点击「全部」显示所有持仓</p>
+                <div id="tag-filter" class="tag-filter" role="group" aria-label="按标签筛选持仓" onchange="renderAdminTable()"></div>
             </div>
             <div class="table-wrapper">
                 <table>
                     <thead>
                         <tr>
                             <th>市场</th>
-                            <th>类型</th>
+                            <th>标签</th>
                             <th>代码</th>
                             <th>名称</th>
                             <th>买入价</th>
@@ -572,12 +593,8 @@
                     <input type="text" id="edit-code">
                 </div>
                 <div class="form-group">
-                    <label>股票类型</label>
-                    <select id="edit-type">
-                        <option value="AI">🤖 AI</option>
-                        <option value="中概股">🇨🇳 中概股</option>
-                        <option value="其他">📦 其他</option>
-                    </select>
+                    <label>标签（可多选）</label>
+                    <div class="tag-options" id="edit-tags"></div>
                 </div>
                 <div class="form-group">
                     <label>股票名称</label>
@@ -606,9 +623,55 @@
     <!-- Toast -->
     <div class="toast" id="toast"></div>
 
+    <script src="/tags.js"></script>
     <script>
         const API_BASE = window.location.origin;
         let stocks = [];
+        let tags = [];
+
+        function selectedTags(mode) {
+            return [...document.querySelectorAll(`#${mode}-tags input:checked`)].map(input => Number(input.value));
+        }
+        function renderTagOptions(mode, selected = []) {
+            document.getElementById(`${mode}-tags`).innerHTML = tags.map(t =>
+                `<label><input type="checkbox" value="${t.id}" ${selected.includes(t.id) ? 'checked' : ''}>${escapeHtml(t.name)}</label>`
+            ).join('') || '<span style="color:#999">请先在上方新增标签</span>';
+        }
+        function renderTagManager() {
+            document.getElementById('tag-manager').innerHTML = tags.map(t => `
+                <div class="tag-manager-row">
+                    <input id="tag-name-${t.id}" aria-label="标签名称" maxlength="40" value="${escapeHtml(t.name)}">
+                    <span style="color:#666">${stocks.filter(s => s.tag_ids.includes(t.id)).length} 只股票</span>
+                    <button class="btn btn-primary btn-sm" onclick="renameTag(${t.id})">保存名称</button>
+                    <button class="btn btn-danger btn-sm" onclick="removeTag(${t.id})">删除</button>
+                </div>`).join('') || '<p style="color:#999">暂无标签，创建第一个标签吧。</p>';
+        }
+        async function tagRequest(path, method, body) {
+            const res = await fetch(`${API_BASE}/api/tags${path}`, {
+                method, headers: {'Content-Type': 'application/json'},
+                ...(body ? {body: JSON.stringify(body)} : {})
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '标签操作失败');
+            await loadStocks();
+            showToast('标签已保存');
+        }
+        async function createTag() {
+            try {
+                await tagRequest('', 'POST', {name: document.getElementById('new-tag-name').value});
+                document.getElementById('new-tag-name').value = '';
+            } catch (err) { showToast(err.message, 'error'); }
+        }
+        async function renameTag(id) {
+            try { await tagRequest(`/${id}`, 'PUT', {name: document.getElementById(`tag-name-${id}`).value}); }
+            catch (err) { showToast(err.message, 'error'); }
+        }
+        async function removeTag(id) {
+            const tag = tags.find(t => t.id === id);
+            if (!confirm(`删除标签「${tag.name}」？关联股票将移除此标签，股票本身会保留。`)) return;
+            try { await tagRequest(`/${id}`, 'DELETE'); }
+            catch (err) { showToast(err.message, 'error'); }
+        }
 
         // 市场切换时更新货币提示
         document.getElementById('add-market').addEventListener('change', function() {
@@ -640,51 +703,45 @@
             return market;
         }
 
-        function getTypeTag(type) {
-            const map = {
-                'AI': '<span class="type-tag type-ai">🤖 AI</span>',
-                '中概股': '<span class="type-tag type-cn">🇨🇳 中概股</span>',
-                '其他': '<span class="type-tag type-other">📦 其他</span>'
-            };
-            return map[type] || `<span class="type-tag type-other">📦 ${type}</span>`;
-        }
 
         async function loadStocks() {
             try {
                 const res = await fetch(`${API_BASE}/api/stocks`);
                 const data = await res.json();
+                if (!res.ok) throw new Error(data.error || '加载失败');
                 stocks = data.stocks;
-                const rates = data.exchange_rates;
-
-                // 更新汇率显示
-                document.getElementById('rate-usd-hkd').textContent = rates.USD_HKD;
-                if (rates.last_update) {
-                    const time = new Date(rates.last_update).toLocaleString('zh-CN');
-                    document.getElementById('rate-update-time').textContent = `(${time})`;
+                tags = data.tags;
+                const addSelected = selectedTags('add');
+                const editSelected = selectedTags('edit');
+                renderTagOptions('add', addSelected);
+                renderTagOptions('edit', editSelected);
+                renderTagManager();
+                fillTagFilter(tags);
+                document.getElementById('rate-usd-hkd').textContent = data.exchange_rates.USD_HKD;
+                if (data.exchange_rates.last_update) {
+                    document.getElementById('rate-update-time').textContent = `(${new Date(data.exchange_rates.last_update).toLocaleString('zh-CN')})`;
                 }
-
                 renderAdminTable();
-            } catch (err) {
-                showToast('加载失败: ' + err.message, 'error');
-            }
+            } catch (err) { showToast('加载失败: ' + err.message, 'error'); }
         }
 
         function renderAdminTable() {
-            if (stocks.length === 0) {
+            const visible = filterStocks(stocks);
+            if (visible.length === 0) {
                 document.getElementById('admin-table-body').innerHTML = `
-                    <tr><td colspan="8" style="text-align:center;padding:30px;color:#999;">暂无数据，请添加股票</td></tr>
+                    <tr><td colspan="8" style="text-align:center;padding:30px;color:#999;">暂无符合条件的持仓</td></tr>
                 `;
                 return;
             }
 
-            const html = stocks.map(stock => {
+            const html = visible.map(stock => {
                 const currSym = getCurrencySymbol(stock.market);
                 return `
                 <tr>
                     <td>${getMarketTag(stock.market)}</td>
-                    <td>${getTypeTag(stock.type || '其他')}</td>
-                    <td><strong>${stock.code}</strong></td>
-                    <td>${stock.name}</td>
+                    <td>${renderStockTags(stock)}</td>
+                    <td><strong>${escapeHtml(stock.code)}</strong></td>
+                    <td>${escapeHtml(stock.name)}</td>
                     <td>
                         ${currSym}${stock.buy_price.toFixed(2)}
                         <div class="currency-label">≈ HK$${stock.buy_price_hkd.toFixed(2)}</div>
@@ -714,7 +771,7 @@
             const market = document.getElementById('add-market').value;
             const code = document.getElementById('add-code').value.trim();
             const name = document.getElementById('add-name').value.trim();
-            const type = document.getElementById('add-type').value;
+            const tag_ids = selectedTags('add');
             const buy_price = document.getElementById('add-buy-price').value;
             const quantity = document.getElementById('add-quantity').value;
             const current_price = document.getElementById('add-current-price').value || buy_price;
@@ -728,7 +785,7 @@
                 const res = await fetch(`${API_BASE}/api/stocks`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ market, code, name, type, buy_price, quantity, current_price })
+                    body: JSON.stringify({ market, code, name, tag_ids, buy_price, quantity, current_price })
                 });
 
                 if (res.ok) {
@@ -740,7 +797,7 @@
                     document.getElementById('add-current-price').value = '';
                     loadStocks();
                 } else {
-                    showToast('添加失败', 'error');
+                    const error = await res.json(); showToast(error.error || '添加失败', 'error');
                 }
             } catch (err) {
                 showToast('请求失败: ' + err.message, 'error');
@@ -769,7 +826,7 @@
             document.getElementById('edit-market').value = stock.market || 'HK';
             document.getElementById('edit-code').value = stock.code;
             document.getElementById('edit-name').value = stock.name;
-            document.getElementById('edit-type').value = stock.type || '其他';
+            renderTagOptions('edit', stock.tag_ids);
             document.getElementById('edit-buy-price').value = stock.buy_price;
             document.getElementById('edit-quantity').value = stock.quantity;
             document.getElementById('edit-current-price').value = stock.current_price;
@@ -787,7 +844,7 @@
                 market: document.getElementById('edit-market').value,
                 code: document.getElementById('edit-code').value.trim(),
                 name: document.getElementById('edit-name').value.trim(),
-                type: document.getElementById('edit-type').value,
+                tag_ids: selectedTags('edit'),
                 buy_price: document.getElementById('edit-buy-price').value,
                 quantity: document.getElementById('edit-quantity').value,
                 current_price: document.getElementById('edit-current-price').value
@@ -804,6 +861,8 @@
                     showToast('更新成功！');
                     closeEditModal();
                     loadStocks();
+                } else {
+                    const error = await res.json(); showToast(error.error || '更新失败', 'error');
                 }
             } catch (err) {
                 showToast('更新失败: ' + err.message, 'error');

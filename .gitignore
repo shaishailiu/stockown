@@ -18,3 +18,7 @@ backend/data/price_cache.json
 
 # CodeBuddy
 .codebuddy/
+
+backend/data/tags.json
+backend/data/*.tmp
+backend/data/backups/
